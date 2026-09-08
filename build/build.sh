@@ -10,7 +10,7 @@ mv "proton-bridge-${VERSION}" proton-bridge
 cd proton-bridge
 
 export GOFLAGS="-trimpath"
-go get golang.org/x/text@v0.39.0 golang.org/x/crypto@v0.55.0 google.golang.org/grpc@v1.83.1
+go get golang.org/x/text@v0.41.0 golang.org/x/crypto@v0.55.0 google.golang.org/grpc@v1.83.1
 make build-nogui
 
 strip bridge proton-bridge
