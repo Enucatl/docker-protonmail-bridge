@@ -18,8 +18,6 @@ services:
       - protonmail:/data
       - /opt/docker/traefik/data/certs/docker_key.pem:/protonmail/certs/key.pem:ro
       - /opt/docker/traefik/data/certs/docker_fullchain.pem:/protonmail/certs/cert.pem:ro
-    labels:
-      - "checkmk_monitor=true"
 
   protonmail-bridge-init:
     extends:
