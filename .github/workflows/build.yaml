@@ -74,6 +74,8 @@ jobs:
       context: ./build
       dockerfile: Dockerfile
       platforms: linux/amd64
+      build_args: |
+        APT_CACHE_BUST=${{ github.run_id }}
       push: ${{ github.event_name != 'pull_request' }}
     secrets:
       registry_token: ${{ secrets.GITHUB_TOKEN }}
