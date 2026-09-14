@@ -11,11 +11,6 @@ permissions: {}
 
 jobs:
   remediate:
-    if: >-
-      github.event.workflow_run.conclusion == 'failure' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
     permissions:
       actions: read
       contents: write
@@ -24,13 +19,15 @@ jobs:
     with:
       run_id: ${{ github.event.workflow_run.id }}
       checkout_ref: ${{ github.event.workflow_run.head_sha }}
+      source_workflow_name: Build and Push Image
+      trusted_branch: main
       model: deepseek/deepseek-v4.1-flash
       provider_name: OpenRouter
       provider_base_url: https://openrouter.ai/api/v1
       provider_env_key: OPENROUTER_API_KEY
       provider_wire_api: responses
       report_artifact: trivy-image-report
-      report_path: trivy-image.json
+      report_path: trivy-remediation.json
       skill_path: .agents/skills/trivy-remediation/SKILL.md
     secrets:
       model_api_key: ${{ secrets.OPENROUTER_API_KEY }}
