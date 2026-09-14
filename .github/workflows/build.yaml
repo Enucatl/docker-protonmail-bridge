@@ -37,7 +37,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "version=$(cat build/VERSION)" >> "$GITHUB_OUTPUT"
+          version="$(cat build/VERSION)"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" && "${GITHUB_HEAD_REF}" == codex/trivy-remediation/* ]]; then
+            version="${version}-pr-${{ github.event.pull_request.number }}-${GITHUB_SHA:0:12}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Set Docker tags
         id: tags
@@ -76,6 +80,6 @@ jobs:
       platforms: linux/amd64
       build_args: |
         APT_CACHE_BUST=${{ github.run_id }}
-      push: ${{ github.event_name != 'pull_request' }}
+      push: ${{ github.event_name != 'pull_request' || (startsWith(github.head_ref, 'codex/trivy-remediation/') && github.event.pull_request.head_repository.full_name == github.repository && github.event.pull_request.user.login == 'github-actions[bot]') }}
     secrets:
       registry_token: ${{ secrets.GITHUB_TOKEN }}

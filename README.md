@@ -91,3 +91,9 @@ The Dockerfile downloads the tagged Bridge release archive, builds the headless 
 ## Security baseline
 
 This compose project uses the shared [docker-compose-security-baseline](https://github.com/Enucatl/docker-compose-security-baseline) for common container hardening defaults, including capabilities, no-new-privileges, memory/swap, and PID limits.
+
+## Trivy remediation
+
+The repository includes an opt-in `workflow_run` remediation workflow. It uses Codex with OpenRouter's `deepseek/deepseek-v4.1-flash` model to propose fixes for fixed HIGH/CRITICAL image vulnerabilities. The paid Codex job is restricted to failed image builds from a push to `main`; pull-request builds still run normal CI and Trivy but never invoke Codex.
+
+Set the repository Actions secret `OPENROUTER_API_KEY`. The workflow creates a remediation PR; it does not modify `main` directly. Remediation PRs receive a unique temporary image tag so the normal build workflow can rebuild and scan the proposed image before merge. See the [shared remediation workflow documentation](https://github.com/Enucatl/docker-compose-security-baseline#opt-in-trivy-remediation) for the workflow and security details.
