@@ -13,6 +13,7 @@ Use this skill only for the failed image-policy run described by the user prompt
 - Inspect the finding's package, installed version, fixed version, target, and layer or path when available. Distinguish OS packages, application/library dependencies, base-image vulnerabilities, and build-stage dependencies.
 - Look for an existing dependency, base-image, package, or toolchain version pin that owns the vulnerable component.
 - Act only when a reasonable upstream fix is available and the change is reproducible in this repository.
+- Start with the normalized remediation report and the smallest set of files that can own the finding. Do not read the full image report, search the entire repository, or inspect git history unless the finding cannot be resolved from that evidence.
 
 ## Change policy
 
@@ -24,10 +25,10 @@ Use this skill only for the failed image-policy run described by the user prompt
 
 ## Validation and stopping
 
-- Rebuild and test the affected image or component where practical.
-- Rerun the relevant Trivy validation where practical, using the same HIGH/CRITICAL and `ignore-unfixed` policy. Trivy, not this agent, is the final acceptance criterion.
+- The surrounding CI workflow is the acceptance check. Do not spend time running Docker builds, Trivy, package downloads, network lookups, or other expensive validation from this agent. Run a lightweight check such as `git diff --check` when available; skip it and stop validation if the environment cannot run it immediately.
 - If no fixed version exists, the finding is not actionable in this repository, or remediation needs architectural or maintainer judgment, stop without a speculative change.
 - A clean repository is a valid result when no safe, minimal remediation is available.
+- After applying the smallest safe change and completing the lightweight check, inspect the diff once, write the final report, and stop. Do not retry failed commands or make additional exploratory changes.
 
 ## Final report
 
