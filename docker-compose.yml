@@ -3,7 +3,7 @@ services:
     extends:
       file: ../compose-security-baseline/hardening.yml
       service: hardened-medium
-    image: ghcr.io/enucatl/proton-bridge:v3.27.1@sha256:9651b555896d40b58f3ee0d7f4ac7eedd11c2e699cfd6b6c284f88b170d78c4f
+    image: ghcr.io/enucatl/proton-bridge:latest
     platform: linux/amd64
     user: "1000:1000"
     restart: unless-stopped

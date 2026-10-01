@@ -6,9 +6,8 @@ This repository now contains only its deployment configuration and instructions.
 
 This repository deploys the published Linux amd64 image from
 [Enucatl/proton-bridge](https://github.com/Enucatl/proton-bridge). Image builds,
-updates, tests, and vulnerability scans belong there. Compose pins the runnable
-`v3.27.1` release by digest. The registry's `sha256-...` signature-artifact tag
-cannot be run as a container. See the
+updates, tests, and vulnerability scans belong there. Compose tracks the
+`latest` tag. See the
 [image operation instructions](https://github.com/Enucatl/proton-bridge/blob/main/HEADLESS.md).
 
 Run commands from `/opt/docker/protonmail-bridge`. The sibling
