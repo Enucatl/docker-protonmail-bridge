@@ -1,99 +1,110 @@
-# What is this fork about?
-[![image](https://img.shields.io/badge/image-ghcr.io%2Fenucatl%2Fprotonmail--bridge-2496ED?logo=docker&logoColor=white)](https://github.com/Enucatl/protonmail-bridge-docker/pkgs/container/protonmail-bridge)
-[![latest tag](https://img.shields.io/github/v/release/ProtonMail/proton-bridge?label=latest&color=2496ED)](https://github.com/Enucatl/protonmail-bridge-docker/pkgs/container/protonmail-bridge)
-[![image size](https://img.shields.io/badge/image%20size-~141%20MB-2496ED)](https://github.com/Enucatl/protonmail-bridge-docker/blob/main/README.md)
-[![downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fghcr-badge.elias.eu.org%2Fapi%2FEnucatl%2Fprotonmail-bridge-docker%2Fprotonmail-bridge&query=downloadCount&label=docker%20pulls&color=2496ED&logo=docker&logoColor=white)](https://github.com/Enucatl/protonmail-bridge-docker/pkgs/container/protonmail-bridge)
-[![build](https://img.shields.io/github/actions/workflow/status/Enucatl/protonmail-bridge-docker/build.yaml?branch=main&label=build)](https://github.com/Enucatl/protonmail-bridge-docker/actions/workflows/build.yaml)
-[![scan](https://img.shields.io/badge/scan-Trivy-1904DA?logo=trivy&logoColor=white)](https://github.com/Enucatl/protonmail-bridge-docker/actions/workflows/build.yaml)
-[![security](https://img.shields.io/badge/vulnerabilities-GitHub%20Security-2EA44F?logo=github&logoColor=white)](https://github.com/Enucatl/protonmail-bridge-docker/security/code-scanning)
+# Proton Mail Bridge deployment
 
+**Image building has moved to [Enucatl/proton-bridge](https://github.com/Enucatl/proton-bridge),
+which contains our minimalistic, headless Proton Mail Bridge implementation.**
+This repository now contains only its deployment configuration and instructions.
 
-- Run Bridge noninteractively in steady state, while keeping `init` interactive
-- Minimize the runtime image by shipping only the headless Bridge binary plus required runtime dependencies
-- Reduce the image from 194 MB by removing the GUI launcher and `vault-editor`, stripping the shipped binary, and using a slimmer runtime base image
-- Harden the default runtime by dropping Linux capabilities and enabling `no-new-privileges`
-- Add Trivy image vulnerability scanning to catch packaged dependency issues
-- Keep `pass` and GPG in the image intentionally: we checked the upstream Linux keychain code and `pass` is still the most practical self-contained backend for a container
-- Keep `socat` intentionally: Bridge is still hardcoded to listen on `127.0.0.1`, so the container needs a forwarding shim to expose IMAP and SMTP externally
-- Allow connecting with ipv6
-- Changing configurations in `docker-compose.yml` to use my external network
-- Publish my image to github with actions, only for amd64
-- Add a healthcheck
+This repository deploys the published Linux amd64 image from
+[Enucatl/proton-bridge](https://github.com/Enucatl/proton-bridge). Image builds,
+updates, tests, and vulnerability scans belong there. Compose pins the runnable
+`v3.27.1` release by digest. The registry's `sha256-...` signature-artifact tag
+cannot be run as a container. See the
+[image operation instructions](https://github.com/Enucatl/proton-bridge/blob/main/HEADLESS.md).
 
+Run commands from `/opt/docker/protonmail-bridge`. The sibling
+[compose-security-baseline](https://github.com/Enucatl/docker-compose-security-baseline)
+provides the read-only root filesystem, dropped capabilities, no-new-privileges,
+and resource limits.
 
-# ProtonMail IMAP/SMTP Bridge Docker Container
+## State, key, and certificates
 
-This is an unofficial Docker container of the [ProtonMail Bridge](https://protonmail.com/bridge/). Some of the scripts are based on [Hendrik Meyer's work](https://gitlab.com/T4cC0re/protonmail-bridge-docker).
-Further developed by shexn here: [https://github.com/shenxn/protonmail-bridge-docker](https://github.com/shenxn/protonmail-bridge-docker).
+| Container path | Source | Purpose |
+| --- | --- | --- |
+| `/data` | Named volume `protonmail-bridge_bridge-state` | Private writable state, owned by UID/GID 1000:1000. Docker initializes a fresh volume from the image. |
+| `/run/secrets/bridge_vault_key` | Read-only Compose secret `./secrets/vault_key` | Exactly 32 raw bytes that unlock the vault; kept outside the state volume. |
+| `/tmp` | Private 64 MiB tmpfs | Temporary files, owned by UID/GID 1000:1000. |
+| `/protonmail/certs/cert.pem` | Traefik `docker_fullchain.pem`, read-only | Existing TLS certificate chain. |
+| `/protonmail/certs/key.pem` | Traefik `docker_key.pem`, read-only | Matching TLS private key, readable by the remapped service UID. |
 
-## Initialization
+For **fresh state only**, create the key without overwriting an existing file:
 
-Initialization is the only workflow that needs an interactive TTY. It creates the local `pass` store, starts the Bridge CLI, and lets you complete login and 2FA.
-
-The Compose file includes a dedicated `protonmail-bridge-init` service behind the `init` profile. It mounts only `/data` plus the external TLS certificate files. The certs are mounted at `/protonmail/certs` and then imported into Bridge's vault on exit from the interactive CLI; Bridge does not automatically use `cert.pem` and `key.pem` just because they exist under the config directory.
-
-```bash
-docker compose build
-docker compose --profile init run --rm protonmail-bridge-init
+```sh
+mkdir -p -m 0700 secrets
+(umask 077; set -C; openssl rand 32 > secrets/vault_key)
 ```
 
-Wait for the bridge to startup, then you will see a prompt appear for [Proton Mail Bridge interactive shell](https://proton.me/support/bridge-cli-guide). Use the `login` command and follow the instructions to add your account into the bridge. Then use `info` to see the configuration information (username and password). After that, use `exit` to exit the bridge.
+Puppet's `data/nodes/docker.home.arpa.yaml` manages secret access for host UID
+101000 (Docker remap base 100000 + service UID 1000). Apply its configuration
+before startup. To grant the same access immediately on this host:
 
-## Add custom certificates
-
-When the CLI exits successfully, the entrypoint runs `cert import` automatically using `/protonmail/certs/cert.pem` and `/protonmail/certs/key.pem`, then stores those file paths in `vault.enc`.
-If you add or rotate certificates after the initial setup, rerun:
-
-```bash
-docker compose stop protonmail-bridge
-docker compose --profile init run --rm protonmail-bridge-init import-certs
-docker compose up -d
+```sh
+setfacl -m u:101000:--x,g::---,o::--- secrets
+setfacl -m u:101000:r--,g::---,o::--- secrets/vault_key
 ```
 
-## Run
+The file reports mode 0640 because the group bits represent the named ACL mask;
+the owning group has no access. Compose file secrets preserve host permissions
+and ACLs. Missing, malformed, or unsafe keys stop startup. Never replace the key
+for existing state. Back up the key separately from the full state volume and
+encrypt both backups; SQLite metadata and logs are plaintext.
 
-After initialization, the service runs headlessly and no longer needs `tty` or `stdin_open`.
+Bridge loads the mounted certificates directly; no `cert import` step is needed.
+Restart after certificate renewal. If both certificate mounts are removed,
+Bridge generates and persists a self-signed certificate instead.
 
-```bash
-docker compose up -d
+## First login and sync
+
+The new `bridge-state` volume starts empty. The previous pass/GPG volume,
+`protonmail-bridge_protonmail`, remains untouched. A fresh login downloads the
+mailbox again and creates new local Bridge credentials and IMAP identities.
+Keep the old volume and image until mailbox/client acceptance passes.
+
+```sh
+docker compose pull
+docker compose down
+docker compose run --rm --no-deps protonmail-bridge --cli --vault-key-file /run/secrets/bridge_vault_key
 ```
 
-The container starts `/protonmail/bridge --noninteractive` and uses `socat` to expose IMAP and SMTP over IPv6-capable listeners because Bridge itself binds only to `127.0.0.1`.
+The initial `down` preserves the old volume and lets Compose recreate the
+network with IPv6 enabled. In the CLI, run `login`, complete password/2FA/mailbox-password prompts, then
+`info` to read the local Bridge credentials and `exit`. Enter credentials only
+in the interactive CLI. Only one Bridge process can use the state volume;
+always stop the service before opening the CLI.
 
-## Runtime layout
-
-- Persistent state lives under `/data`.
-- Bridge config, cache, data, GPG home, and password store all live inside `/data`.
-- The external TLS certificate and key are bind-mounted at `/protonmail/certs/{cert,key}.pem` and referenced from the Bridge vault after `cert import`.
-- The example compose file drops all Linux capabilities and enables `no-new-privileges`.
-- The published ports map host `10125 -> 1125` for SMTP and `10243 -> 1243` for IMAP.
-
-## Kubernetes
-
-If you want to run this image in a Kubernetes environment. You can use the [Helm](https://helm.sh/) chart (https://github.com/k8s-at-home/charts/tree/master/charts/stable/protonmail-bridge) created by [@Eagleman7](https://github.com/Eagleman7). More details can be found in [#23](https://github.com/shenxn/protonmail-bridge-docker/issues/23).
-
-If you don't want to use Helm, you can also reference to the guide ([#6](https://github.com/shenxn/protonmail-bridge-docker/issues/6)) written by [@ghudgins](https://github.com/ghudgins).
-
-## Bridge CLI Guide
-
-The initialization step exposes the bridge CLI so you can do things like switch between combined and split mode, change proxy, etc. The [official guide](https://protonmail.com/support/knowledge-base/bridge-cli-guide/) gives more information on to use the CLI.
-
-## Build
-
-For anyone who wants to build this container on your own, the image is built from source in the `build/` directory and packages the Bridge release pinned in `build/VERSION`.
-
-```bash
-docker build -t protonmail-bridge ./build
+```sh
+docker compose up -d --wait --wait-timeout 120
+docker compose logs --tail=100 -f protonmail-bridge
 ```
 
-The Dockerfile downloads the tagged Bridge release archive, builds the headless binary, strips it, and copies only the runtime artifacts into the final image.
+The image supplies its own healthcheck, which verifies TLS and both mail
+greetings. Healthy status does not confirm login or completed synchronization.
+Verify initial sync, folders, flags, attachments, sending, and reconnect after
+a restart with a real client.
 
-## Security baseline
+## Mail clients
 
-This compose project uses the shared [docker-compose-security-baseline](https://github.com/Enucatl/docker-compose-security-baseline) for common container hardening defaults, including capabilities, no-new-privileges, memory/swap, and PID limits.
+Both protocols require **SSL/TLS (implicit TLS)**. Change previous STARTTLS
+settings and use the credentials from `info`, rather than the Proton password.
 
-## Trivy remediation
+| Protocol | Host port | Container port |
+| --- | --- | --- |
+| IMAP | 10243 | 1143 |
+| SMTP | 10125 | 1025 |
 
-The repository includes an opt-in `workflow_run` remediation workflow. It uses Codex with OpenRouter's `deepseek/deepseek-v4.1-flash` model to propose fixes for fixed HIGH/CRITICAL image vulnerabilities. The paid Codex job is restricted to failed image builds from a push to `main`; pull-request builds still run normal CI and Trivy but never invoke Codex.
+The host publishes ports 10243 (IMAP) and 10125 (SMTP) for clients, including
+containers such as Paperless. Connect to the certificate-covered hostname
+`bridge.docker.home.arpa` and trust the certificate issuer. Both use implicit TLS.
+The dedicated default network allows outbound Proton HTTPS and enables IPv6.
 
-Set the repository Actions secret `OPENROUTER_API_KEY`. The workflow creates a remediation PR; it does not modify `main` directly. Remediation PRs receive a unique temporary image tag so the normal build workflow can rebuild and scan the proposed image before merge. See the [shared remediation workflow documentation](https://github.com/Enucatl/docker-compose-security-baseline#opt-in-trivy-remediation) for the workflow and security details.
+## Updates and recovery
+
+Change the image pin in `docker-compose.yml`, then run `docker compose pull`
+and `docker compose up -d --wait --wait-timeout 120`. The runtime has no automatic
+updater, shell, pass/GPG, or socat forwarding.
+
+`docker compose down` preserves state; `down -v` deletes the new state volume.
+For migration that preserves the old Bridge passwords and IMAP identities,
+follow the image's [migration instructions](https://github.com/Enucatl/proton-bridge/blob/main/HEADLESS.md#migration-and-release-acceptance)
+instead of creating fresh state. Export the existing vault key and snapshot
+all old state before migration. Image-only rollback may require restoring that
+snapshot and logging in again.

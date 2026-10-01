@@ -3,38 +3,30 @@ services:
     extends:
       file: ../compose-security-baseline/hardening.yml
       service: hardened-medium
-    image: ghcr.io/enucatl/protonmail-bridge:3.25.0
-    build:
-      context: ./build
-      dockerfile: Dockerfile
+    image: ghcr.io/enucatl/proton-bridge:v3.27.1@sha256:9651b555896d40b58f3ee0d7f4ac7eedd11c2e699cfd6b6c284f88b170d78c4f
+    platform: linux/amd64
+    user: "1000:1000"
     restart: unless-stopped
-    command: ["run"]
+    command: ["--noninteractive", "--vault-key-file", "/run/secrets/bridge_vault_key"]
+    secrets:
+      - bridge_vault_key
     ports:
-      - "10243:1243"
-      - "10125:1125"
+      - "10243:1143"
+      - "10125:1025"
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m,mode=0700,uid=1000,gid=1000
     volumes:
-      - protonmail:/data
+      - bridge-state:/data
       - /opt/docker/traefik/data/certs/docker_key.pem:/protonmail/certs/key.pem:ro
       - /opt/docker/traefik/data/certs/docker_fullchain.pem:/protonmail/certs/cert.pem:ro
 
-  protonmail-bridge-init:
-    extends:
-      file: ../compose-security-baseline/hardening.yml
-      service: hardened-medium
-    image: ghcr.io/enucatl/protonmail-bridge:3.25.0
-    build:
-      context: ./build
-      dockerfile: Dockerfile
-    command: ["init"]
-    profiles:
-      - init
-    stdin_open: true
-    tty: true
-    volumes:
-      - protonmail:/data
-      - /opt/docker/traefik/data/certs/docker_key.pem:/protonmail/certs/key.pem:ro
-      - /opt/docker/traefik/data/certs/docker_fullchain.pem:/protonmail/certs/cert.pem:ro
+networks:
+  default:
+    enable_ipv6: true
+
 volumes:
-  protonmail:
+  bridge-state:
+
+secrets:
+  bridge_vault_key:
+    file: ./secrets/vault_key
